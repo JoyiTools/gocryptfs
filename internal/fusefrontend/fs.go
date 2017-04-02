@@ -34,6 +34,8 @@ type FS struct {
 	nameTransform *nametransform.NameTransform
 	// Content encryption helper
 	contentEnc *contentenc.ContentEnc
+	// Open File Table
+	openFileTable *openFileTable
 }
 
 var _ pathfs.FileSystem = &FS{} // Verify that interface is implemented.
@@ -43,6 +45,9 @@ func NewFS(args Args) *FS {
 	cryptoCore := cryptocore.New(args.Masterkey, args.CryptoBackend, contentenc.DefaultIVBits, args.HKDF)
 	contentEnc := contentenc.New(cryptoCore, contentenc.DefaultBS)
 	nameTransform := nametransform.New(cryptoCore.EMECipher, args.LongNames, args.Raw64)
+	oft := &openFileTable{
+		entries: make(map[DevIno]*oftEntry),
+	}
 
 	if args.SerializeReads {
 		serialize_reads.Init()
@@ -53,6 +58,7 @@ func NewFS(args Args) *FS {
 		args:          args,
 		nameTransform: nameTransform,
 		contentEnc:    contentEnc,
+		openFileTable: oft,
 	}
 }
 

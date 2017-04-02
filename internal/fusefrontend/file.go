@@ -40,9 +40,9 @@ type file struct {
 	// Content encryption helper
 	contentEnc *contentenc.ContentEnc
 	// Device and inode number uniquely identify the backing file
-	devIno DevInoStruct
+	devIno DevIno
 	// Entry in the open file map
-	fileTableEntry *openFileEntryT
+	fileTableEntry *oftEntry
 	// go-fuse nodefs.loopbackFile
 	loopbackFile nodefs.File
 	// Store where the last byte was written
@@ -63,7 +63,7 @@ func NewFile(fd *os.File, writeOnly bool, fs *FS) (nodefs.File, fuse.Status) {
 		return nil, fuse.ToStatus(err)
 	}
 	di := DevInoFromStat(&st)
-	t := openFileMap.register(di)
+	t := fs.openFileTable.register(di)
 
 	return &file{
 		fd:             fd,
@@ -341,7 +341,7 @@ func (f *file) doWrite(data []byte, off int64) (uint32, fuse.Status) {
 // Stat() call is very expensive.
 // The caller must "wlock.lock(f.devIno.ino)" otherwise this check would be racy.
 func (f *file) isConsecutiveWrite(off int64) bool {
-	opCount := atomic.LoadUint64(&openFileMap.opCount)
+	opCount := atomic.LoadUint64(&f.fs.openFileTable.opCount)
 	return opCount == f.lastOpCount+1 && off == f.lastWrittenOffset+1
 }
 
@@ -372,7 +372,7 @@ func (f *file) Write(data []byte, off int64) (uint32, fuse.Status) {
 	}
 	n, status := f.doWrite(data, off)
 	if status.Ok() {
-		f.lastOpCount = atomic.LoadUint64(&openFileMap.opCount)
+		f.lastOpCount = atomic.LoadUint64(&f.fs.openFileTable.opCount)
 		f.lastWrittenOffset = off + int64(len(data)) - 1
 	}
 	return n, status
@@ -388,7 +388,7 @@ func (f *file) Release() {
 	f.released = true
 	f.fdLock.Unlock()
 
-	openFileMap.unregister(f.devIno)
+	f.fs.openFileTable.unregister(f.devIno)
 }
 
 // Flush - FUSE call
